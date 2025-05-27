@@ -42,7 +42,7 @@ exports.getUserInfo = (req, res) => {
     return res.status(401).json({ message: "Unauthorized" });
   }
 
-  const getUserSql = `SELECT id, phone_number, name, birthday, gender, orientation, passions, current_step FROM user WHERE id=?`;
+  const getUserSql = `SELECT id, phone_number, name,bio, birthday, gender, orientation, passions, current_step FROM user WHERE id=?`;
 
   db.query(getUserSql, [userId], (error, result) => {
     if (error) {
