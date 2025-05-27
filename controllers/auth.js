@@ -87,7 +87,6 @@ exports.verifyOtp = (req, res) => {
 };
 
 exports.createOtp = (req, res) => {
-  console.log("req", req.body);
   const id = getId();
   const otp = Math.floor(Math.random() * (9999 - 1000 + 1)) + 1000;
   const { phone_number: phoneNumber } = req.body;
@@ -112,9 +111,28 @@ exports.createOtp = (req, res) => {
   // });
 };
 
-exports.currentStep = (req, res) => {
+exports.currentStep = async (req, res) => {
+  const userId = req.user?.id;
   let screenRoute = "onboarding";
   let screenName = "login-route";
+
+  const isOnboardingDone = () => {
+    return new Promise((resolve, reject) => {
+      const sql = `SELECT 1 FROM user WHERE id = ? AND name IS NOT NULL AND name != '' LIMIT 1`;
+      db.query(sql, [userId], (error, results) => {
+        if (error) return reject(error);
+        resolve(results.length > 0);
+      });
+    });
+  };
+
+  const isOnboardingDoneResult = await isOnboardingDone();
+
+  if (isOnboardingDoneResult) {
+    screenName = "bottom_tabs";
+    screenRoute = "home";
+  }
+
   res.json({
     message: "verified",
     route: screenRoute,

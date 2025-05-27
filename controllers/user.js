@@ -6,7 +6,7 @@ const { getId } = require("../utils/getId");
 exports.addUserInfo = (req, res) => {
   const { name, birthday, gender, orientation, passions, current_step } =
     req.body;
-  const userId = req.user?.id; // assuming you're attaching user info to req in some auth middleware
+  const userId = req.user?.id;
   if (!userId) {
     return res.status(401).json({ message: "Unauthorized" });
   }
@@ -33,4 +33,27 @@ exports.addUserInfo = (req, res) => {
         .json({ message: "User info updated successfully" });
     }
   );
+};
+
+exports.getUserInfo = (req, res) => {
+  const userId = req.user?.id;
+
+  if (!userId) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+
+  const getUserSql = `SELECT id, phone_number, name, birthday, gender, orientation, passions, current_step FROM user WHERE id=?`;
+
+  db.query(getUserSql, [userId], (error, result) => {
+    if (error) {
+      return res.status(500).json({ message: "Failed to fetch user info" });
+    }
+
+    if (!result.length) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const userInfo = result[0];
+    return res.status(200).json({ data: userInfo });
+  });
 };
