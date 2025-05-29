@@ -1,4 +1,3 @@
-const { default: axios } = require("axios");
 const db = require("../db");
 const { generateToken } = require("../middlewares/auth");
 const { getId } = require("../utils/getId");
@@ -126,11 +125,36 @@ exports.currentStep = async (req, res) => {
     });
   };
 
+  const doesUserExistInMatches = () => {
+    return new Promise((resolve, reject) => {
+      const sql = `
+        SELECT 1 FROM matches 
+        WHERE user_id = ? OR other_user_id = ?
+        LIMIT 1
+      `;
+
+      db.query(sql, [userId, userId], (err, result) => {
+        if (err) {
+          console.error("Database error:", err);
+          return reject(false);
+        }
+        resolve(result.length > 0);
+      });
+    });
+  };
+
   const isOnboardingDoneResult = await isOnboardingDone();
+  const doesUserExistInMatchesResult = await doesUserExistInMatches();
+
+  console.log("doesUserExistInMatchesResult", doesUserExistInMatchesResult);
 
   if (isOnboardingDoneResult) {
     screenName = "bottom_tabs";
     screenRoute = "home";
+  }
+  if (doesUserExistInMatchesResult) {
+    screenName = "match-route";
+    screenRoute = "its-a-match";
   }
 
   res.json({

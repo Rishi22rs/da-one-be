@@ -1,11 +1,8 @@
-const { default: axios } = require("axios");
 const db = require("../db");
-const { generateToken } = require("../middlewares/auth");
-const { getId } = require("../utils/getId");
 
 exports.addUserInfo = (req, res) => {
   const { name, birthday, gender, orientation, passions, current_step } =
-    req.body;
+    req.body || {};
   const userId = req.user?.id;
   if (!userId) {
     return res.status(401).json({ message: "Unauthorized" });
