@@ -1,3 +1,4 @@
+const { default: axios } = require("axios");
 const db = require("../db");
 const { generateToken } = require("../middlewares/auth");
 const { getId } = require("../utils/getId");
@@ -91,23 +92,29 @@ exports.createOtp = (req, res) => {
   const { phone_number: phoneNumber } = req.body;
   const addingPhoneNumberAndOtpSql = `INSERT INTO user_phone_number_mapping (id, phone_number,otp)
   VALUES (?,?,?) ON DUPLICATE KEY UPDATE otp=?`;
+  //https://2factor.in/API/V1/34b58319-3cdf-11f0-a562-0200cd936042/SMS/+917843887864/6969/OTP1
   // axios
   //   .get(
   //     `https://www.fast2sms.com/dev/bulkV2?authorization=${process.env.FAST2SMS_API_KET}&variables_values=${otp}&route=otp&numbers=${phoneNumber}`
   //   )
   //   .then(() => {
-  db.query(
-    addingPhoneNumberAndOtpSql,
-    [id, Number(phoneNumber), otp, otp],
-    (error, result) => {
-      if (error)
-        return res
-          .status(500)
-          .json({ message: "Error while creating OTP", error });
-      res.json({ message: "OTP created" });
-    }
-  );
-  // });
+  axios
+    .get(
+      `https://2factor.in/API/V1/${process.env.FACTOR_API_KEY}/SMS/+91${phoneNumber}/${otp}/OTP1`
+    )
+    .then(() => {
+      db.query(
+        addingPhoneNumberAndOtpSql,
+        [id, Number(phoneNumber), otp, otp],
+        (error, result) => {
+          if (error)
+            return res
+              .status(500)
+              .json({ message: "Error while creating OTP", error });
+          res.json({ message: "OTP created" });
+        }
+      );
+    });
 };
 
 exports.currentStep = async (req, res) => {
