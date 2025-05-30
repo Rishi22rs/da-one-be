@@ -54,3 +54,27 @@ exports.getUserInfo = (req, res) => {
     return res.status(200).json({ data: userInfo });
   });
 };
+
+exports.updateUserLocation = (req, res) => {
+  const userId = req.user?.id;
+  const { latitude, longitude } = req.body;
+
+  if (!userId) {
+    return res.status(400).json({ message: "Unauthorized" });
+  }
+
+  const sql = `UPDATE user SET latitude = ?, longitude = ? WHERE id = ?`;
+
+  db.query(sql, [latitude, longitude, userId], (error, result) => {
+    if (error) {
+      console.error("Error updating location:", error);
+      return res.status(500).json({ message: "Failed to update location" });
+    }
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    return res.status(200).json({ message: "Location updated successfully" });
+  });
+};
