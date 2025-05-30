@@ -136,7 +136,7 @@ exports.currentStep = async (req, res) => {
     return new Promise((resolve, reject) => {
       const sql = `
         SELECT 1 FROM matches 
-        WHERE user_id = ? OR other_user_id = ?
+        WHERE (user_id = ? OR other_user_id = ?) AND unmatched = 0
         LIMIT 1
       `;
 

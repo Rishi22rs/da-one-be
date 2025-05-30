@@ -140,3 +140,32 @@ exports.addLikeOrDislike = (req, res) => {
     }
   });
 };
+
+exports.unmatch = (req, res) => {
+  const userId = req.user?.id;
+
+  if (!userId) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+
+  const sql = `
+    UPDATE matches 
+    SET unmatched = 1 
+    WHERE user_id = ? OR other_user_id = ?
+  `;
+
+  db.query(sql, [userId, userId], (error, result) => {
+    if (error) {
+      console.error("Error updating unmatched status:", error);
+      return res.status(500).json({ message: "Failed to unmatch user" });
+    }
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: "No matches found for user" });
+    }
+
+    return res
+      .status(200)
+      .json({ message: "All matches unmatched successfully" });
+  });
+};
