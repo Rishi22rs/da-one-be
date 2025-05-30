@@ -98,23 +98,23 @@ exports.createOtp = (req, res) => {
   //     `https://www.fast2sms.com/dev/bulkV2?authorization=${process.env.FAST2SMS_API_KET}&variables_values=${otp}&route=otp&numbers=${phoneNumber}`
   //   )
   //   .then(() => {
-  axios
-    .get(
-      `https://2factor.in/API/V1/${process.env.FACTOR_API_KEY}/SMS/+91${phoneNumber}/${otp}/OTP1`
-    )
-    .then(() => {
-      db.query(
-        addingPhoneNumberAndOtpSql,
-        [id, Number(phoneNumber), otp, otp],
-        (error, result) => {
-          if (error)
-            return res
-              .status(500)
-              .json({ message: "Error while creating OTP", error });
-          res.json({ message: "OTP created" });
-        }
-      );
-    });
+  // axios
+  //   .get(
+  //     `https://2factor.in/API/V1/${process.env.FACTOR_API_KEY}/SMS/+91${phoneNumber}/${otp}/OTP1`
+  //   )
+  //   .then(() => {
+  db.query(
+    addingPhoneNumberAndOtpSql,
+    [id, Number(phoneNumber), otp, otp],
+    (error, result) => {
+      if (error)
+        return res
+          .status(500)
+          .json({ message: "Error while creating OTP", error });
+      res.json({ message: "OTP created" });
+    }
+  );
+  // });
 };
 
 exports.currentStep = async (req, res) => {
