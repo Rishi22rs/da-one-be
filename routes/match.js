@@ -6,10 +6,12 @@ const {
   getNearbyUsers,
   addLikeOrDislike,
   unmatch,
+  getMatchedUserData,
 } = require("../controllers/match.js");
 
 router.post("/get-nearby-users", verifyToken, getNearbyUsers);
 router.post("/add-like-dislike", verifyToken, addLikeOrDislike);
 router.get("/unmatch", verifyToken, unmatch);
+router.get("/matched-user-data", verifyToken, getMatchedUserData);
 
 module.exports = router;

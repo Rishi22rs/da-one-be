@@ -148,24 +148,144 @@ exports.unmatch = (req, res) => {
     return res.status(401).json({ message: "Unauthorized" });
   }
 
-  const sql = `
-    UPDATE matches 
-    SET unmatched = 1 
+  db.getConnection((err, connection) => {
+    if (err) {
+      return res
+        .status(500)
+        .json({ message: "Error getting DB connection", err });
+    }
+
+    connection.beginTransaction((err) => {
+      if (err)
+        return res.status(500).json({ message: "Transaction start failed" });
+
+      const updateMatchesSql = `
+      UPDATE matches 
+      SET unmatched = 1 
+      WHERE user_id = ? OR other_user_id = ?
+    `;
+
+      const deleteLikesSql = `
+      DELETE FROM like_and_dislikes 
+      WHERE user_id = ?
+    `;
+
+      connection.query(updateMatchesSql, [userId, userId], (updateErr) => {
+        if (updateErr) {
+          return connection.rollback(() => {
+            res.status(500).json({ message: "Failed to update matches" });
+          });
+        }
+
+        connection.query(deleteLikesSql, [userId], (deleteErr) => {
+          if (deleteErr) {
+            return connection.rollback(() => {
+              res.status(500).json({ message: "Failed to delete likes" });
+            });
+          }
+
+          connection.commit((commitErr) => {
+            if (commitErr) {
+              return db.rollback(() => {
+                res.status(500).json({ message: "Transaction commit failed" });
+              });
+            }
+
+            return res
+              .status(200)
+              .json({ message: "Unmatched and cleaned up successfully" });
+          });
+        });
+      });
+    });
+  });
+};
+
+exports.getMatchedUserData = (req, res) => {
+  const userId = req.user?.id;
+
+  if (!userId) {
+    return res.status(400).json({ error: "User ID missing from request" });
+  }
+
+  const matchQuery = `
+    SELECT 
+      CASE 
+        WHEN user_id = ? THEN other_user_id 
+        ELSE user_id 
+      END AS matched_user_id
+    FROM matches
     WHERE user_id = ? OR other_user_id = ?
+    LIMIT 1
   `;
 
-  db.query(sql, [userId, userId], (error, result) => {
-    if (error) {
-      console.error("Error updating unmatched status:", error);
-      return res.status(500).json({ message: "Failed to unmatch user" });
+  db.query(matchQuery, [userId, userId, userId], (matchError, matchResult) => {
+    if (matchError) {
+      console.error("Error searching for a match", error);
+      return res.status(500).json({ message: "Database search failed." });
+    }
+    if (!matchResult.length) {
+      return res.status(404).json({ error: "No match found" });
     }
 
-    if (result.affectedRows === 0) {
-      return res.status(404).json({ message: "No matches found for user" });
-    }
+    const matchedUserId = matchResult[0].matched_user_id;
 
-    return res
-      .status(200)
-      .json({ message: "All matches unmatched successfully" });
+    return db.query(
+      "SELECT * FROM user WHERE id = ?",
+      [matchedUserId],
+      (userError, userResult) => {
+        if (userError) {
+          console.error(userError);
+          return res.status(500).json({ error: "Internal server error" });
+        }
+        if (!userResult.length) {
+          return res.status(404).json({ error: "Matched user not found" });
+        }
+
+        console.log("userResulkt", userResult);
+
+        let segregatedList = [];
+        let item = userResult?.[0];
+        segregatedList.push({
+          type: "BIG_TEXT",
+          title: "Name & Age",
+          content: `${item?.name}, ${calculateAge(item?.birthday)}`,
+        });
+        !!item?.bio &&
+          segregatedList.push({
+            type: "SMALL_TEXT",
+            title: "Bio",
+            content: item?.bio,
+          });
+        segregatedList.push({
+          type: "SMALL_TEXT_LIST",
+          title: "Essentials",
+          content: [
+            {
+              title: "Distance",
+              value: `${Math.floor(item?.distance)} km away`,
+            },
+            { title: "Height", value: item?.height },
+            { title: "Orientation", value: item?.orientation },
+            { title: "Gender", value: item?.gender },
+            { title: "Languages", value: item?.languages },
+          ].filter((entry) => entry.value || entry.value === 0),
+        });
+        segregatedList.push({
+          type: "SMALL_TEXT",
+          title: "Passions",
+          content: item?.passions,
+        });
+        {
+          !!item?.job &&
+            segregatedList.push({
+              type: "SMALL_TEXT",
+              title: "Job",
+              content: item?.job,
+            });
+        }
+        return res.status(200).json(segregatedList);
+      }
+    );
   });
 };
