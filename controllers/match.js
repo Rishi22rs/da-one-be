@@ -242,8 +242,6 @@ exports.getMatchedUserData = (req, res) => {
           return res.status(404).json({ error: "Matched user not found" });
         }
 
-        console.log("userResulkt", userResult);
-
         let segregatedList = [];
         let item = userResult?.[0];
         segregatedList.push({
@@ -287,5 +285,37 @@ exports.getMatchedUserData = (req, res) => {
         return res.status(200).json(segregatedList);
       }
     );
+  });
+};
+
+exports.getMatchedUserIds = (req, res) => {
+  const userId = req.user?.id;
+
+  if (!userId) {
+    return res.status(400).json({ error: "User ID missing from request" });
+  }
+
+  const matchQuery = `
+    SELECT 
+      *
+    FROM matches
+    WHERE user_id = ? OR other_user_id = ?
+    LIMIT 1
+  `;
+
+  db.query(matchQuery, [userId, userId], (error, result) => {
+    if (error) {
+      console.error(error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+    if (!result.length) {
+      return res.status(404).json({ error: "Matched user not found" });
+    }
+    if (userId !== result?.[0]?.user_id) {
+      let tempId = result?.[0]?.user_id;
+      result[0].user_id = result?.[0]?.other_user_id;
+      result[0].other_user_id = tempId;
+    }
+    return res.status(200).json(result?.[0]);
   });
 };
