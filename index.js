@@ -22,6 +22,7 @@ app.use(express.json());
 app.use("/api", require("./routes/auth.js"));
 app.use("/api", require("./routes/user.js"));
 app.use("/api", require("./routes/match.js"));
+app.use("/api", require("./routes/chat.js"));
 
 // Socket.IO logic
 initSocket(io);

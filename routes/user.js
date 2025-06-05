@@ -10,6 +10,6 @@ const {
 
 router.post("/add-user-info", verifyToken, addUserInfo);
 router.get("/get-user-info", verifyToken, getUserInfo);
-router.get("/update-user-location", verifyToken, updateUserLocation);
+router.post("/update-user-location", verifyToken, updateUserLocation);
 
 module.exports = router;
