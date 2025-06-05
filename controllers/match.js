@@ -73,10 +73,10 @@ exports.addLikeOrDislike = (req, res) => {
   // Step 1: Check if other_user already liked the current user
   const checkMatchSql = `
     SELECT 1 FROM like_and_dislikes 
-    WHERE other_user_id = ?
+    WHERE other_user_id = ? AND user_id = ?
   `;
 
-  db.query(checkMatchSql, [userId], (checkErr, matchResult) => {
+  db.query(checkMatchSql, [userId, other_user_id], (checkErr, matchResult) => {
     if (checkErr) {
       console.error("Error checking for match:", checkErr);
       return res.status(500).json({ message: "Error checking for match" });
