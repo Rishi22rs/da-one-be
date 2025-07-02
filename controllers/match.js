@@ -4,7 +4,7 @@ const { getId } = require("../utils/getId");
 
 exports.getNearbyUsers = (req, res) => {
   const { latitude, longitude, radius } = req.body || {};
-  const sql = `SELECT * FROM (SELECT *, (6371 * acos(cos(radians(?)) * cos(radians(latitude)) * cos(radians(longitude) - radians(?)) + sin(radians(?)) * sin(radians(latitude)))) AS distance FROM user WHERE latitude IS NOT NULL AND longitude IS NOT NULL) AS calculated WHERE distance <= 10000 AND id != ? ORDER BY distance`;
+  const sql = `SELECT * FROM (SELECT *, (6371 * acos(cos(radians(?)) * cos(radians(latitude)) * cos(radians(longitude) - radians(?)) + sin(radians(?)) * sin(radians(latitude)))) AS distance FROM user WHERE latitude IS NOT NULL AND longitude IS NOT NULL) AS calculated WHERE distance <= 1000000 AND id != ? ORDER BY distance`;
   const currentUserId = req.user?.id;
 
   db.query(sql, [latitude, longitude, radius, currentUserId], (err, result) => {
