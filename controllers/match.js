@@ -4,60 +4,80 @@ const { getId } = require("../utils/getId");
 
 exports.getNearbyUsers = (req, res) => {
   const { latitude, longitude, radius } = req.body || {};
-  const sql = `SELECT * FROM (SELECT *, (6371 * acos(cos(radians(?)) * cos(radians(latitude)) * cos(radians(longitude) - radians(?)) + sin(radians(?)) * sin(radians(latitude)))) AS distance FROM user WHERE latitude IS NOT NULL AND longitude IS NOT NULL) AS calculated WHERE distance <= 1000000 AND id != ? ORDER BY distance`;
+  const sql = `SELECT * FROM (
+    SELECT *,
+      (
+        6371 * ACOS(
+          COS(RADIANS(?)) * COS(RADIANS(latitude)) *
+          COS(RADIANS(longitude) - RADIANS(?)) +
+          SIN(RADIANS(?)) * SIN(RADIANS(latitude))
+        )
+      ) AS distance
+    FROM user
+    WHERE latitude IS NOT NULL AND longitude IS NOT NULL
+  ) AS calculated
+  WHERE distance <= ?
+    AND NOT EXISTS (
+      SELECT 1 FROM matches
+      WHERE (matches.user_id = calculated.id OR matches.other_user_id = calculated.id) AND unmatched != 1)
+  ORDER BY distance;`;
   const currentUserId = req.user?.id;
 
-  db.query(sql, [latitude, longitude, radius, currentUserId], (err, result) => {
-    if (err) {
-      return res
-        .status(500)
-        .json({ message: "Error fetching nearby users:", err });
-    } else {
-      let finalResult = result?.map((item) => {
-        let segregatedList = [];
-        segregatedList.push({
-          type: "BIG_TEXT",
-          title: "Name & Age",
-          content: `${item?.name}, ${calculateAge(item?.birthday)}`,
-        });
-        !!item?.bio &&
+  db.query(
+    sql,
+    [latitude, longitude, latitude, radius, currentUserId, currentUserId],
+    (err, result) => {
+      if (err) {
+        return res
+          .status(500)
+          .json({ message: "Error fetching nearby users:", err });
+      } else {
+        let finalResult = result?.map((item) => {
+          let segregatedList = [];
           segregatedList.push({
-            type: "SMALL_TEXT",
-            title: "Bio",
-            content: item?.bio,
+            type: "BIG_TEXT",
+            title: "Name & Age",
+            content: `${item?.name}, ${calculateAge(item?.birthday)}`,
           });
-        segregatedList.push({
-          type: "SMALL_TEXT_LIST",
-          title: "Essentials",
-          content: [
-            {
-              title: "Distance",
-              value: `${Math.floor(item?.distance)} km away`,
-            },
-            { title: "Height", value: item?.height },
-            { title: "Orientation", value: item?.orientation },
-            { title: "Gender", value: item?.gender },
-            { title: "Languages", value: item?.languages },
-          ].filter((entry) => entry.value || entry.value === 0),
-        });
-        segregatedList.push({
-          type: "SMALL_TEXT",
-          title: "Passions",
-          content: item?.passions,
-        });
-        {
-          !!item?.job &&
+          !!item?.bio &&
             segregatedList.push({
               type: "SMALL_TEXT",
-              title: "Job",
-              content: item?.job,
+              title: "Bio",
+              content: item?.bio,
             });
-        }
-        return { userId: item?.id, segregatedList };
-      });
-      return res.status(200).json(finalResult);
+          segregatedList.push({
+            type: "SMALL_TEXT_LIST",
+            title: "Essentials",
+            content: [
+              {
+                title: "Distance",
+                value: `${Math.floor(item?.distance)} km away`,
+              },
+              { title: "Height", value: item?.height },
+              { title: "Orientation", value: item?.orientation },
+              { title: "Gender", value: item?.gender },
+              { title: "Languages", value: item?.languages },
+            ].filter((entry) => entry.value || entry.value === 0),
+          });
+          segregatedList.push({
+            type: "SMALL_TEXT",
+            title: "Passions",
+            content: item?.passions,
+          });
+          {
+            !!item?.job &&
+              segregatedList.push({
+                type: "SMALL_TEXT",
+                title: "Job",
+                content: item?.job,
+              });
+          }
+          return { userId: item?.id, segregatedList };
+        });
+        return res.status(200).json(finalResult);
+      }
     }
-  });
+  );
 };
 
 exports.addLikeOrDislike = (req, res) => {
