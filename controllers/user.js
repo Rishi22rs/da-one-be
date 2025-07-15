@@ -78,3 +78,30 @@ exports.updateUserLocation = (req, res) => {
     return res.status(200).json({ message: "Location updated successfully" });
   });
 };
+
+exports.getLikesReceived = (req, res) => {
+  const userId = req.user?.id;
+
+  if (!userId) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+
+  const sql = `
+    SELECT u.*
+    FROM like_and_dislikes l
+    JOIN user u ON l.user_id = u.id
+    WHERE l.other_user_id = ?
+  `;
+
+  db.query(sql, [userId], (err, results) => {
+    if (err) {
+      console.error("Error fetching likes:", err);
+      return res.status(500).json({ message: "Database error" });
+    }
+
+    return res.status(200).json({
+      count: results.length,
+      users: results,
+    });
+  });
+};

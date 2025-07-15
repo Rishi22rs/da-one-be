@@ -23,9 +23,13 @@ app.use("/api", require("./routes/auth.js"));
 app.use("/api", require("./routes/user.js"));
 app.use("/api", require("./routes/match.js"));
 app.use("/api", require("./routes/chat.js"));
+app.use("/api", require("./routes/app.js"));
 
 // Socket.IO logic
 initSocket(io);
+
+// Crons
+require("./crons/user.js");
 
 // Start server
 server.listen(port, () => {

@@ -3,7 +3,13 @@ const { calculateAge } = require("../utils/calculateAge");
 const { getId } = require("../utils/getId");
 
 exports.getNearbyUsers = (req, res) => {
-  const { latitude, longitude, radius } = req.body || {};
+  const {
+    latitude,
+    longitude,
+    radius,
+    limit = 100,
+    offset = 0,
+  } = req.body || {};
   const sql = `SELECT * FROM (
     SELECT *,
       (
@@ -14,18 +20,29 @@ exports.getNearbyUsers = (req, res) => {
         )
       ) AS distance
     FROM user
-    WHERE latitude IS NOT NULL AND longitude IS NOT NULL
+    WHERE latitude IS NOT NULL AND longitude IS NOT NULL AND id != ?
   ) AS calculated
   WHERE distance <= ?
     AND NOT EXISTS (
-      SELECT 1 FROM matches
-      WHERE (matches.user_id = calculated.id OR matches.other_user_id = calculated.id) AND unmatched != 1)
-  ORDER BY distance;`;
+      SELECT 1 FROM like_and_dislikes
+      WHERE user_id = ? AND other_user_id = calculated.id
+    )
+  ORDER BY distance
+  LIMIT ? OFFSET ?;`;
   const currentUserId = req.user?.id;
 
   db.query(
     sql,
-    [latitude, longitude, latitude, radius, currentUserId, currentUserId],
+    [
+      latitude,
+      longitude,
+      latitude,
+      currentUserId,
+      radius,
+      currentUserId,
+      limit,
+      offset,
+    ],
     (err, result) => {
       if (err) {
         return res
@@ -81,8 +98,10 @@ exports.getNearbyUsers = (req, res) => {
 };
 
 exports.addLikeOrDislike = (req, res) => {
-  const { other_user_id } = req.body;
+  const { other_user_id, is_like } = req.body;
   const userId = req.user?.id;
+
+  console.log(userId, other_user_id, is_like);
 
   if (!userId || !other_user_id) {
     return res.status(400).json({ message: "Missing required fields" });
@@ -92,73 +111,124 @@ exports.addLikeOrDislike = (req, res) => {
 
   // Step 1: Check if other_user already liked the current user
   const checkMatchSql = `
-    SELECT 1 FROM like_and_dislikes 
-    WHERE other_user_id = ? AND user_id = ?
+  SELECT 1 
+  FROM like_and_dislikes 
+  WHERE other_user_id = ? AND user_id = ? AND is_like = 1
+  UNION
+  SELECT 1 
+  FROM matches 
+  WHERE other_user_id = ?
   `;
 
-  db.query(checkMatchSql, [userId, other_user_id], (checkErr, matchResult) => {
-    if (checkErr) {
-      console.error("Error checking for match:", checkErr);
-      return res.status(500).json({ message: "Error checking for match" });
-    }
+  db.query(
+    checkMatchSql,
+    [userId, other_user_id, userId],
+    (checkErr, matchResult) => {
+      if (checkErr) {
+        console.error("Error checking for match:", checkErr);
+        return res.status(500).json({ message: "Error checking for match" });
+      }
 
-    if (matchResult.length > 0) {
-      // Match found - insert into matches table if it doesn't exist
-      const matchId = getId();
-      const insertMatchSql = `
+      if (matchResult.length > 0) {
+        const matchId = getId();
+        const insertMatchSql = `
+        INSERT INTO like_and_dislikes (id, user_id, other_user_id,is_like)
+        SELECT ?, ?, ?, ?
+        WHERE NOT EXISTS (
+          SELECT 1 FROM like_and_dislikes WHERE user_id = ? AND other_user_id = ?
+        );
         INSERT INTO matches (id, user_id, other_user_id)
         SELECT ?, ?, ?
         WHERE NOT EXISTS (
           SELECT 1 FROM matches WHERE user_id = ? AND other_user_id = ?
-        )
+        );
       `;
 
-      db.query(
-        insertMatchSql,
-        [matchId, userId, other_user_id, userId, other_user_id],
-        (matchErr, matchResult) => {
-          if (matchErr) {
-            console.error("Error inserting match:", matchErr);
-            return res.status(500).json({ message: "Error inserting match" });
-          }
+        db.query(
+          insertMatchSql,
+          [
+            id,
+            userId,
+            other_user_id,
+            is_like,
+            userId,
+            other_user_id,
+            matchId,
+            userId,
+            other_user_id,
+            userId,
+            other_user_id,
+          ],
+          (matchErr, matchResult) => {
+            if (matchErr) {
+              console.error("Error inserting match:", matchErr);
+              return res.status(500).json({ message: "Error inserting match" });
+            }
 
-          return res
-            .status(200)
-            .json({ message: "Match created successfully", match: true });
-        }
-      );
-    } else {
-      // No match yet - insert like/dislike if not already existing
-      const insertSql = `
-        INSERT INTO like_and_dislikes (id, user_id, other_user_id)
-        SELECT ?, ?, ?
-        WHERE NOT EXISTS (
-          SELECT 1 FROM like_and_dislikes WHERE user_id = ? AND other_user_id = ?
-        )
-      `;
-
-      db.query(
-        insertSql,
-        [id, userId, other_user_id, userId, other_user_id],
-        (error, result) => {
-          if (error) {
-            console.error("Error inserting like/dislike:", error);
-            return res.status(500).json({ message: "Database insert failed" });
-          }
-
-          if (result.affectedRows === 0) {
             return res
-              .status(409)
-              .json({ message: "Interaction already exists", match: false });
+              .status(200)
+              .json({ message: "Match created successfully", match: true });
+          }
+        );
+      } else {
+        const checkSwipesSql = `SELECT swipes FROM user_config WHERE user_id = ?`;
+        db.query(checkSwipesSql, [userId], (err, results) => {
+          if (err) {
+            console.error("Error checking swipes:", err);
+            return res.status(500).json({ message: "Error checking swipes" });
           }
 
-          return res
-            .status(200)
-            .json({ message: "Interaction saved successfully", match: false });
-        }
-      );
+          const swipes = results?.[0]?.swipes || 0;
+          if (swipes < 1) {
+            return res
+              .status(403)
+              .json({ message: "No swipes left", canSwipe: false });
+          }
+
+          // Step 2: Insert like/dislike if not exists
+          const insertSql = `
+      INSERT INTO like_and_dislikes (id, user_id, other_user_id, is_like)
+      SELECT ?, ?, ?, ?
+      WHERE NOT EXISTS (
+        SELECT 1 FROM like_and_dislikes WHERE user_id = ? AND other_user_id = ?
+      )
+    `;
+
+          db.query(
+            insertSql,
+            [id, userId, other_user_id, is_like, userId, other_user_id],
+            (insertErr, insertResult) => {
+              if (insertErr) {
+                console.error("Error inserting like/dislike:", insertErr);
+                return res.status(500).json({ message: "Insert failed" });
+              }
+
+              if (insertResult.affectedRows === 0) {
+                return res
+                  .status(409)
+                  .json({ message: "Already liked/disliked" });
+              }
+
+              // Step 3: Decrease swipes by 1
+              const updateSwipesSql = `UPDATE user_config SET swipes = swipes - 1 WHERE user_id = ?`;
+              db.query(updateSwipesSql, [userId], (updateErr) => {
+                if (updateErr) {
+                  console.error("Error updating swipes:", updateErr);
+                  return res
+                    .status(500)
+                    .json({ message: "Swipe update failed" });
+                }
+
+                return res
+                  .status(200)
+                  .json({ message: "Interaction recorded" });
+              });
+            }
+          );
+        });
+      }
     }
-  });
+  );
 };
 
 exports.unmatch = (req, res) => {
@@ -337,5 +407,38 @@ exports.getMatchedUserIds = (req, res) => {
       result[0].other_user_id = tempId;
     }
     return res.status(200).json(result?.[0]);
+  });
+};
+
+exports.checkIfMatched = (req, res) => {
+  const userId = req.user?.id;
+
+  if (!userId) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+
+  const sql = `
+    SELECT 
+      CASE 
+        WHEN user_id = ? THEN other_user_id 
+        ELSE user_id 
+      END AS matchedUserId
+    FROM matches
+    WHERE (user_id = ? OR other_user_id = ?)
+      AND unmatched != 1
+  `;
+
+  db.query(sql, [userId, userId, userId], (err, results) => {
+    if (err) {
+      console.error("Error checking match:", err);
+      return res.status(500).json({ message: "Database error" });
+    }
+
+    const hasMatch = results.length > 0;
+
+    return res.status(200).json({
+      matched: hasMatch,
+      matchedUserIds: results.map((r) => r.matchedUserId),
+    });
   });
 };

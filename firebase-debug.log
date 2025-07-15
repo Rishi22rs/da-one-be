@@ -1,0 +1,64 @@
+[debug] [2025-07-10T12:05:16.111Z] ----------------------------------------------------------------------
+[debug] [2025-07-10T12:05:16.112Z] Command:       /usr/local/bin/node /usr/local/bin/firebase init functions
+[debug] [2025-07-10T12:05:16.112Z] CLI Version:   14.9.0
+[debug] [2025-07-10T12:05:16.113Z] Platform:      darwin
+[debug] [2025-07-10T12:05:16.113Z] Node Version:  v20.10.0
+[debug] [2025-07-10T12:05:16.113Z] Time:          Thu Jul 10 2025 17:35:16 GMT+0530 (India Standard Time)
+[debug] [2025-07-10T12:05:16.113Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2025-07-10T12:05:16.239Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-07-10T12:05:16.240Z] > authorizing via signed-in user (underratedgames22@gmail.com)
+[info] 
+     ######## #### ########  ######## ########     ###     ######  ########
+     ##        ##  ##     ## ##       ##     ##  ##   ##  ##       ##
+     ######    ##  ########  ######   ########  #########  ######  ######
+     ##        ##  ##    ##  ##       ##     ## ##     ##       ## ##
+     ##       #### ##     ## ######## ########  ##     ##  ######  ########
+
+You're about to initialize a Firebase project in this directory:
+
+  /Users/rishisrivastava/Documents/loyal-app/loyalapp-be
+
+Before we get started, keep in mind:
+
+  * You are initializing within an existing Firebase project directory
+
+[info] 
+=== Project Setup
+[info] 
+[info] First, let's associate this project directory with a Firebase project.
+[info] You can create multiple project aliases by running firebase use --add, 
+[info] but for now we'll just set up a default project.
+[info] 
+[debug] [2025-07-10T12:05:16.241Z] Using project from CLI flag: connecti-fb3e0
+[debug] [2025-07-10T12:05:16.242Z] Checked if tokens are valid: true, expires at: 1752152481254
+[debug] [2025-07-10T12:05:16.242Z] Checked if tokens are valid: true, expires at: 1752152481254
+[debug] [2025-07-10T12:05:16.242Z] >>> [apiv2][query] GET https://firebase.googleapis.com/v1beta1/projects/connecti-fb3e0 [none]
+[debug] [2025-07-10T12:05:17.593Z] <<< [apiv2][status] GET https://firebase.googleapis.com/v1beta1/projects/connecti-fb3e0 200
+[debug] [2025-07-10T12:05:17.593Z] <<< [apiv2][body] GET https://firebase.googleapis.com/v1beta1/projects/connecti-fb3e0 {"projectId":"connecti-fb3e0","projectNumber":"43608665282","displayName":"connecti","name":"projects/connecti-fb3e0","resources":{"hostingSite":"connecti-fb3e0"},"state":"ACTIVE","etag":"1_08c2765e-45d2-4e4d-b925-a2fbec342d59"}
+[info] i  Using project connecti-fb3e0 (connecti) 
+[info] 
+=== Functions Setup
+[debug] [2025-07-10T12:05:17.613Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-07-10T12:05:17.613Z] > authorizing via signed-in user (underratedgames22@gmail.com)
+[debug] [2025-07-10T12:05:17.613Z] [iam] checking project connecti-fb3e0 for permissions ["firebase.projects.get"]
+[debug] [2025-07-10T12:05:17.614Z] Checked if tokens are valid: true, expires at: 1752152481254
+[debug] [2025-07-10T12:05:17.614Z] Checked if tokens are valid: true, expires at: 1752152481254
+[debug] [2025-07-10T12:05:17.614Z] >>> [apiv2][query] POST https://cloudresourcemanager.googleapis.com/v1/projects/connecti-fb3e0:testIamPermissions [none]
+[debug] [2025-07-10T12:05:17.614Z] >>> [apiv2][(partial)header] POST https://cloudresourcemanager.googleapis.com/v1/projects/connecti-fb3e0:testIamPermissions x-goog-quota-user=projects/connecti-fb3e0
+[debug] [2025-07-10T12:05:17.614Z] >>> [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/connecti-fb3e0:testIamPermissions {"permissions":["firebase.projects.get"]}
+[debug] [2025-07-10T12:05:19.018Z] <<< [apiv2][status] POST https://cloudresourcemanager.googleapis.com/v1/projects/connecti-fb3e0:testIamPermissions 200
+[debug] [2025-07-10T12:05:19.018Z] <<< [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/connecti-fb3e0:testIamPermissions {"permissions":["firebase.projects.get"]}
+[info] 
+Detected existing codebase(s): default
+
+[info] Let's create a new codebase for your functions.
+[info] A directory corresponding to the codebase will be created in your project
+[info] with sample code pre-configured.
+
+[info] See https://firebase.google.com/docs/functions/organize-functions for
+[info] more information on organizing your functions using codebases.
+
+[info] Functions can be deployed with firebase deploy.
+
+[error] Invalid codebase name. Codebase must be less than 64 characters and can contain only lowercase letters, numeric characters, underscores, and dashes.
