@@ -6,34 +6,55 @@ exports.getNearbyUsers = (req, res) => {
   const {
     latitude,
     longitude,
-    radius,
-    limit = 100,
+    radius = 1000000,
     offset = 0,
+    getUserLimit = 100,
   } = req.body || {};
-  const sql = `SELECT * FROM (
-    SELECT *,
-      (
-        6371 * ACOS(
-          COS(RADIANS(?)) * COS(RADIANS(latitude)) *
-          COS(RADIANS(longitude) - RADIANS(?)) +
-          SIN(RADIANS(?)) * SIN(RADIANS(latitude))
-        )
-      ) AS distance
-    FROM user
-    WHERE latitude IS NOT NULL AND longitude IS NOT NULL AND id != ?
-  ) AS calculated
-  WHERE distance <= ?
-    AND NOT EXISTS (
-      SELECT 1 FROM like_and_dislikes
-      WHERE user_id = ? AND other_user_id = calculated.id
-    )
-  ORDER BY distance
-  LIMIT ? OFFSET ?;`;
+
   const currentUserId = req.user?.id;
 
-  db.query(
-    sql,
-    [
+  if (!latitude || !longitude || !currentUserId) {
+    return res.status(400).json({ message: "Missing required fields" });
+  }
+
+  const swipeSql = `SELECT swipes FROM user_config WHERE user_id = ?`;
+
+  db.query(swipeSql, [currentUserId], (swipeErr, swipeRes) => {
+    if (swipeErr) {
+      return res.status(500).json({ message: "Failed to fetch swipe data" });
+    }
+
+    const swipesLeft = swipeRes?.[0]?.swipes || 0;
+
+    if (swipesLeft < 1) {
+      return res.status(200).json([]); // No swipes left
+    }
+
+    const limit = Math.min(swipesLeft, getUserLimit);
+
+    const sql = `
+      SELECT * FROM (
+        SELECT *,
+          (
+            6371 * ACOS(
+              COS(RADIANS(?)) * COS(RADIANS(latitude)) *
+              COS(RADIANS(longitude) - RADIANS(?)) +
+              SIN(RADIANS(?)) * SIN(RADIANS(latitude))
+            )
+          ) AS distance
+        FROM user
+        WHERE latitude IS NOT NULL AND longitude IS NOT NULL AND id != ?
+      ) AS calculated
+      WHERE distance <= ?
+        AND NOT EXISTS (
+          SELECT 1 FROM like_and_dislikes
+          WHERE user_id = ? AND other_user_id = calculated.id
+        )
+      ORDER BY distance
+      LIMIT ? OFFSET ?;
+    `;
+
+    const values = [
       latitude,
       longitude,
       latitude,
@@ -42,59 +63,67 @@ exports.getNearbyUsers = (req, res) => {
       currentUserId,
       limit,
       offset,
-    ],
-    (err, result) => {
+    ];
+
+    db.query(sql, values, (err, result) => {
       if (err) {
         return res
           .status(500)
-          .json({ message: "Error fetching nearby users:", err });
-      } else {
-        let finalResult = result?.map((item) => {
-          let segregatedList = [];
-          segregatedList.push({
-            type: "BIG_TEXT",
-            title: "Name & Age",
-            content: `${item?.name}, ${calculateAge(item?.birthday)}`,
-          });
-          !!item?.bio &&
-            segregatedList.push({
-              type: "SMALL_TEXT",
-              title: "Bio",
-              content: item?.bio,
-            });
-          segregatedList.push({
-            type: "SMALL_TEXT_LIST",
-            title: "Essentials",
-            content: [
-              {
-                title: "Distance",
-                value: `${Math.floor(item?.distance)} km away`,
-              },
-              { title: "Height", value: item?.height },
-              { title: "Orientation", value: item?.orientation },
-              { title: "Gender", value: item?.gender },
-              { title: "Languages", value: item?.languages },
-            ].filter((entry) => entry.value || entry.value === 0),
-          });
+          .json({ message: "Error fetching nearby users", err });
+      }
+
+      const finalResult = result.map((item) => {
+        const segregatedList = [];
+
+        segregatedList.push({
+          type: "BIG_TEXT",
+          title: "Name & Age",
+          content: `${item?.name}, ${calculateAge(item?.birthday)}`,
+        });
+
+        if (item?.bio) {
           segregatedList.push({
             type: "SMALL_TEXT",
-            title: "Passions",
-            content: item?.passions,
+            title: "Bio",
+            content: item.bio,
           });
-          {
-            !!item?.job &&
-              segregatedList.push({
-                type: "SMALL_TEXT",
-                title: "Job",
-                content: item?.job,
-              });
-          }
-          return { userId: item?.id, segregatedList };
+        }
+
+        segregatedList.push({
+          type: "SMALL_TEXT_LIST",
+          title: "Essentials",
+          content: [
+            {
+              title: "Distance",
+              value: `${Math.floor(item?.distance)} km away`,
+            },
+            { title: "Height", value: item?.height },
+            { title: "Orientation", value: item?.orientation },
+            { title: "Gender", value: item?.gender },
+            { title: "Languages", value: item?.languages },
+          ].filter((entry) => entry.value || entry.value === 0),
         });
-        return res.status(200).json(finalResult);
-      }
-    }
-  );
+
+        segregatedList.push({
+          type: "SMALL_TEXT",
+          title: "Passions",
+          content: item?.passions,
+        });
+
+        if (item?.job) {
+          segregatedList.push({
+            type: "SMALL_TEXT",
+            title: "Job",
+            content: item.job,
+          });
+        }
+
+        return { userId: item?.id, segregatedList };
+      });
+
+      return res.status(200).json(finalResult);
+    });
+  });
 };
 
 exports.addLikeOrDislike = (req, res) => {
