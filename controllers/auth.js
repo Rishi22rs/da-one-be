@@ -88,11 +88,12 @@ exports.verifyOtp = (req, res) => {
 
 exports.createOtp = (req, res) => {
   const id = getId();
-  const bypassNumbers = [7843887864, 1234567890];
+  // const bypassNumbers = [7843887864, 1234567890];
   const { phone_number: phoneNumber } = req.body;
-  const otp = bypassNumbers.includes(Number(phoneNumber))
-    ? "6969"
-    : Math.floor(Math.random() * (9999 - 1000 + 1)) + 1000;
+  // const otp = bypassNumbers.includes(Number(phoneNumber))
+  //   ? "6969"
+  //   : Math.floor(Math.random() * (9999 - 1000 + 1)) + 1000;
+  const otp = "1234";
   const addingPhoneNumberAndOtpSql = `INSERT INTO user_phone_number_mapping (id, phone_number,otp)
   VALUES (?,?,?) ON DUPLICATE KEY UPDATE otp=?`;
   //https://2factor.in/API/V1/34b58319-3cdf-11f0-a562-0200cd936042/SMS/+917843887864/6969/OTP1
