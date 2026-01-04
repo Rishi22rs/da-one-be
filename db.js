@@ -1,4 +1,4 @@
-var mysql = require("mysql");
+var mysql = require("mysql2/promise");
 
 var db = mysql.createPool({
   host: "mysql-underrated.alwaysdata.net",
