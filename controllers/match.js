@@ -9,7 +9,7 @@ exports.getNearbyUsers = async (req, res) => {
       longitude,
       radius = 10000000,
       offset = 0,
-      getUserLimit = 100,
+      limit = 100,
     } = req.body || {};
 
     const currentUserId = req.user?.id;
@@ -26,7 +26,7 @@ exports.getNearbyUsers = async (req, res) => {
         AND unmatched = 0
       LIMIT 1
       `,
-      [currentUserId, currentUserId]
+      [currentUserId, currentUserId],
     );
 
     if (locked) {
@@ -35,14 +35,14 @@ exports.getNearbyUsers = async (req, res) => {
 
     const [[config]] = await db.query(
       `SELECT swipes FROM user_config WHERE user_id = ?`,
-      [currentUserId]
+      [currentUserId],
     );
 
     if (!config || config.swipes < 1) {
       return res.status(200).json([]);
     }
 
-    const limit = Math.min(config.swipes, getUserLimit);
+    const getUserLimit = Math.min(config.swipes, limit);
 
     const [rows] = await db.query(
       `
@@ -88,9 +88,9 @@ exports.getNearbyUsers = async (req, res) => {
         currentUserId,
         radius,
         currentUserId,
-        limit,
+        getUserLimit,
         offset,
-      ]
+      ],
     );
 
     const finalResult = rows.map((item) => ({
@@ -165,7 +165,7 @@ exports.addLikeOrDislike = async (req, res) => {
       AND unmatched = 0
       LIMIT 1
       `,
-      [userId, userId]
+      [userId, userId],
     );
 
     if (matchRows.length) {
@@ -176,7 +176,7 @@ exports.addLikeOrDislike = async (req, res) => {
     /* 2️⃣ Check swipes */
     const [[config]] = await conn.query(
       `SELECT swipes FROM user_config WHERE user_id = ?`,
-      [userId]
+      [userId],
     );
 
     if (!config || config.swipes < 1) {
@@ -195,7 +195,7 @@ exports.addLikeOrDislike = async (req, res) => {
         AND is_deleted != 1
       LIMIT 1
       `,
-      [other_user_id, userId]
+      [other_user_id, userId],
     );
 
     if (mutualLike.length && is_like) {
@@ -207,7 +207,7 @@ exports.addLikeOrDislike = async (req, res) => {
         INSERT INTO matches (id, user_id, other_user_id)
         VALUES (?, ?, ?)
         `,
-        [matchId, userId, other_user_id]
+        [matchId, userId, other_user_id],
       );
 
       await conn.query(
@@ -217,12 +217,12 @@ exports.addLikeOrDislike = async (req, res) => {
         WHERE (user_id = ? AND other_user_id = ?)
            OR (user_id = ? AND other_user_id = ?)
         `,
-        [userId, other_user_id, other_user_id, userId]
+        [userId, other_user_id, other_user_id, userId],
       );
 
       await conn.query(
         `UPDATE user_config SET swipes = swipes - 1 WHERE user_id = ?`,
-        [userId]
+        [userId],
       );
 
       await conn.commit();
@@ -242,12 +242,12 @@ exports.addLikeOrDislike = async (req, res) => {
         WHERE user_id = ? AND other_user_id = ?
       )
       `,
-      [getId(), userId, other_user_id, is_like, userId, other_user_id]
+      [getId(), userId, other_user_id, is_like, userId, other_user_id],
     );
 
     await conn.query(
       `UPDATE user_config SET swipes = swipes - 1 WHERE user_id = ?`,
-      [userId]
+      [userId],
     );
 
     await conn.commit();
@@ -380,7 +380,7 @@ exports.unmatch = async (req, res) => {
       WHERE (user_id = ? OR other_user_id = ?)
         AND unmatched = 0
       `,
-      [userId, userId]
+      [userId, userId],
     );
 
     if (result.affectedRows === 0) {
@@ -395,7 +395,7 @@ exports.unmatch = async (req, res) => {
       SET is_deleted = 1
       WHERE user_id = ? OR other_user_id = ?
       `,
-      [userId, userId]
+      [userId, userId],
     );
 
     await conn.commit();
@@ -429,7 +429,7 @@ exports.getMatchedUserData = async (req, res) => {
         AND unmatched = 0
       LIMIT 1
       `,
-      [userId, userId, userId]
+      [userId, userId, userId],
     );
 
     if (!match) {
@@ -500,7 +500,7 @@ exports.getMatchedUserIds = async (req, res) => {
         AND unmatched = 0
       LIMIT 1
       `,
-      [userId, userId]
+      [userId, userId],
     );
 
     if (!match) {
