@@ -3,6 +3,7 @@ const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
 const { initSocket } = require("./initSocket.js");
+const cors = require("cors");
 
 const app = express();
 const server = http.createServer(app); // Create HTTP server from Express
@@ -16,6 +17,7 @@ const io = new Server(server, {
 const port = 3000;
 
 // Middleware
+app.use(cors());
 app.use(express.json());
 
 // Routes
@@ -32,6 +34,6 @@ initSocket(io);
 require("./crons/user.js");
 
 // Start server
-server.listen(port, () => {
+server.listen(port, "0.0.0.0", () => {
   console.log(`Server running at http://localhost:${port}`);
 });
