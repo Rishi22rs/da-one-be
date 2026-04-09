@@ -3,17 +3,81 @@ const db = require("../db");
 const { generateToken } = require("../middlewares/auth");
 const { getId } = require("../utils/getId");
 
-const isNewUser = async (phoneNumber) => {
-  const sql = `SELECT 1 FROM user WHERE phone_number = ? LIMIT 1`;
-  const [rows] = await db.query(sql, [phoneNumber]);
-  return rows.length === 0;
+const getPositiveIntEnv = (envValue, fallbackValue) => {
+  const parsed = Number.parseInt(envValue, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallbackValue;
+};
+
+const OTP_EXPIRY_MINUTES = getPositiveIntEnv(process.env.OTP_EXPIRY_MINUTES, 5);
+const OTP_MAX_ATTEMPTS = getPositiveIntEnv(process.env.OTP_MAX_ATTEMPTS, 5);
+const OTP_BLOCK_MINUTES = getPositiveIntEnv(process.env.OTP_BLOCK_MINUTES, 15);
+
+// In-memory attempt store for single-instance deployments.
+// For multi-instance deployments, move this to Redis.
+const otpAttemptStore = new Map();
+
+const resolveUserForPhone = async (conn, phoneNumber) => {
+  const [existingUsers] = await conn.query(
+    `SELECT id FROM user WHERE phone_number = ? ORDER BY id LIMIT 1`,
+    [phoneNumber],
+  );
+
+  if (existingUsers.length) {
+    return {
+      userId: existingUsers[0].id,
+      newUser: false,
+    };
+  }
+
+  const createdId = getId();
+
+  try {
+    await conn.query(`INSERT INTO user (id, phone_number) VALUES (?, ?)`, [
+      createdId,
+      phoneNumber,
+    ]);
+
+    return {
+      userId: createdId,
+      newUser: true,
+    };
+  } catch (err) {
+    // Safe fallback once UNIQUE(user.phone_number) exists:
+    // if another transaction inserted first, we fetch that row.
+    if (err?.code !== "ER_DUP_ENTRY") {
+      throw err;
+    }
+
+    const [usersAfterDup] = await conn.query(
+      `SELECT id FROM user WHERE phone_number = ? ORDER BY id LIMIT 1`,
+      [phoneNumber],
+    );
+
+    if (!usersAfterDup.length) {
+      throw new Error("User insert conflicted but no row found for phone number");
+    }
+
+    return {
+      userId: usersAfterDup[0].id,
+      newUser: false,
+    };
+  }
 };
 
 exports.verifyOtp = async (req, res) => {
-  const { phone_number: phoneNumber, otp } = req.query;
+  const { phone_number: phoneNumber, otp } = req.body || {};
 
   if (!phoneNumber || !otp) {
     return res.status(400).json({ message: "Missing phone number or OTP" });
+  }
+
+  const now = Date.now();
+  const attemptState = otpAttemptStore.get(phoneNumber);
+  if (attemptState?.blockedUntil && attemptState.blockedUntil > now) {
+    return res.status(429).json({
+      message: "Too many attempts. Try again later.",
+      retry_after_seconds: Math.ceil((attemptState.blockedUntil - now) / 1000),
+    });
   }
 
   const conn = await db.getConnection();
@@ -21,44 +85,94 @@ exports.verifyOtp = async (req, res) => {
   try {
     await conn.beginTransaction();
 
-    const [otpRows] = await conn.query(
+    const [[otpRow]] = await conn.query(
       `
-      SELECT 1 FROM user_phone_number_mapping
-      WHERE phone_number = ? AND otp = ?
+      SELECT
+        otp,
+        timestamp,
+        TIMESTAMPDIFF(SECOND, timestamp, CURRENT_TIMESTAMP) AS otp_age_seconds
+      FROM user_phone_number_mapping
+      WHERE phone_number = ?
+      ORDER BY timestamp DESC
       LIMIT 1
+      FOR UPDATE
       `,
-      [phoneNumber, otp]
+      [phoneNumber],
     );
 
-    if (!otpRows.length) {
+    if (!otpRow) {
       await conn.rollback();
-      return res.status(401).json({ message: "Invalid OTP" });
+      return res.status(401).json({ message: "OTP not found or expired" });
     }
 
-    const newUser = await isNewUser(phoneNumber);
+    const otpAgeSeconds = Number(otpRow.otp_age_seconds);
+    const isExpired =
+      !Number.isFinite(otpAgeSeconds) ||
+      otpAgeSeconds > OTP_EXPIRY_MINUTES * 60;
 
-    let userId;
-
-    if (newUser) {
-      userId = getId();
-
-      await conn.query(`INSERT INTO user (id, phone_number) VALUES (?, ?)`, [
-        userId,
-        phoneNumber,
-      ]);
-    } else {
-      const [users] = await conn.query(
-        `SELECT id FROM user WHERE phone_number = ? LIMIT 1`,
-        [phoneNumber]
+    if (isExpired) {
+      await conn.query(
+        `DELETE FROM user_phone_number_mapping WHERE phone_number = ?`,
+        [phoneNumber],
       );
-      userId = users[0].id;
+      await conn.commit();
+      return res
+        .status(401)
+        .json({ message: "OTP expired. Please request a new OTP." });
     }
+
+    if (String(otpRow.otp) !== String(otp)) {
+      const failedAttempts = (attemptState?.failedAttempts || 0) + 1;
+
+      if (failedAttempts >= OTP_MAX_ATTEMPTS) {
+        otpAttemptStore.set(phoneNumber, {
+          failedAttempts,
+          blockedUntil: now + OTP_BLOCK_MINUTES * 60 * 1000,
+        });
+
+        await conn.query(
+          `DELETE FROM user_phone_number_mapping WHERE phone_number = ?`,
+          [phoneNumber],
+        );
+        await conn.commit();
+
+        return res.status(429).json({
+          message: `Too many invalid OTP attempts. Request a new OTP in ${OTP_BLOCK_MINUTES} minutes.`,
+        });
+      }
+
+      otpAttemptStore.set(phoneNumber, {
+        failedAttempts,
+        blockedUntil: 0,
+      });
+
+      await conn.rollback();
+      return res.status(401).json({
+        message: "Invalid OTP",
+        attempts_left: OTP_MAX_ATTEMPTS - failedAttempts,
+      });
+    }
+
+    const { userId, newUser } = await resolveUserForPhone(conn, phoneNumber);
+
+    // Ensure swipe config exists for both new and legacy users.
+    await conn.query(
+      `
+      INSERT INTO user_config (id, user_id, swipes, blocked)
+      SELECT ?, ?, 10, 0
+      WHERE NOT EXISTS (
+        SELECT 1 FROM user_config WHERE user_id = ? LIMIT 1
+      )
+      `,
+      [getId(), userId, userId],
+    );
 
     await conn.query(
       `DELETE FROM user_phone_number_mapping WHERE phone_number = ?`,
-      [phoneNumber]
+      [phoneNumber],
     );
 
+    otpAttemptStore.delete(phoneNumber);
     await conn.commit();
 
     return res.json({
@@ -121,13 +235,18 @@ exports.createOtp = async (req, res) => {
   const id = getId();
 
   try {
-    const sql = `
+    await db.query(`DELETE FROM user_phone_number_mapping WHERE phone_number = ?`, [
+      phoneNumber,
+    ]);
+
+    await db.query(
+      `
       INSERT INTO user_phone_number_mapping (id, phone_number, otp)
       VALUES (?, ?, ?)
-      ON DUPLICATE KEY UPDATE otp = ?
-    `;
-
-    await db.query(sql, [id, phoneNumber, otp, otp]);
+      `,
+      [id, phoneNumber, otp],
+    );
+    otpAttemptStore.delete(phoneNumber);
 
     // SMS send here (async, fire-and-forget)
 
@@ -155,7 +274,7 @@ exports.currentStep = async (req, res) => {
       WHERE id = ? AND name IS NOT NULL AND name != ''
       LIMIT 1
       `,
-      [userId]
+      [userId],
     );
 
     const [[activeMatch]] = await db.query(
@@ -165,7 +284,7 @@ exports.currentStep = async (req, res) => {
         AND unmatched = 0
       LIMIT 1
       `,
-      [userId, userId]
+      [userId, userId],
     );
 
     if (onboarding) {

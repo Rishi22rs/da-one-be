@@ -143,62 +143,89 @@ exports.getNearbyUsers = async (req, res) => {
 exports.addLikeOrDislike = async (req, res) => {
   const { other_user_id, is_like } = req.body;
   const userId = req.user?.id;
+  const likeFlag = Number(is_like) === 1 ? 1 : 0;
 
   if (!userId || !other_user_id) {
     return res.status(400).json({ message: "Missing required fields" });
   }
 
   let conn;
+  let transactionStarted = false;
 
   try {
     conn = await db.getConnection();
-    await conn.beginTransaction();
 
-    /* 1️⃣ Check if already matched (1-on-1 lock) */
-    const [matchRows] = await conn.query(
+    /* 1️⃣ Single pre-check query: locked state, swipes, duplicate swipe, mutual like */
+    const [[precheck]] = await conn.query(
       `
-      SELECT 1
-      FROM matches
-      WHERE (
-        user_id = ? OR other_user_id = ?
-      )
-      AND unmatched = 0
-      LIMIT 1
+      SELECT
+        EXISTS(
+          SELECT 1
+          FROM matches
+          WHERE (user_id = ? OR other_user_id = ?)
+            AND unmatched = 0
+          LIMIT 1
+        ) AS is_locked,
+        COALESCE((
+          SELECT swipes
+          FROM user_config
+          WHERE user_id = ?
+          LIMIT 1
+        ), 0) AS swipes,
+        EXISTS(
+          SELECT 1
+          FROM like_and_dislikes
+          WHERE user_id = ?
+            AND other_user_id = ?
+            AND is_deleted != 1
+          LIMIT 1
+        ) AS already_swiped,
+        IF(
+          ? = 1,
+          EXISTS(
+            SELECT 1
+            FROM like_and_dislikes
+            WHERE user_id = ?
+              AND other_user_id = ?
+              AND is_like = 1
+              AND is_deleted != 1
+            LIMIT 1
+          ),
+          0
+        ) AS has_mutual_like
       `,
-      [userId, userId],
+      [
+        userId,
+        userId,
+        userId,
+        userId,
+        other_user_id,
+        likeFlag,
+        other_user_id,
+        userId,
+      ],
     );
 
-    if (matchRows.length) {
-      await conn.rollback();
+    if (precheck?.is_locked) {
       return res.status(200).json({ matched: true });
     }
 
-    /* 2️⃣ Check swipes */
-    const [[config]] = await conn.query(
-      `SELECT swipes FROM user_config WHERE user_id = ?`,
-      [userId],
-    );
+    if (precheck?.already_swiped) {
+      return res.status(200).json({
+        matched: false,
+        liked: likeFlag,
+        alreadyProcessed: true,
+      });
+    }
 
-    if (!config || config.swipes < 1) {
-      await conn.rollback();
+    if (!precheck || precheck.swipes < 1) {
       return res.status(403).json({ message: "No swipes left" });
     }
 
-    /* 3️⃣ Check if other user already liked me */
-    const [mutualLike] = await conn.query(
-      `
-      SELECT 1
-      FROM like_and_dislikes
-      WHERE user_id = ?
-        AND other_user_id = ?
-        AND is_like = 1
-        AND is_deleted != 1
-      LIMIT 1
-      `,
-      [other_user_id, userId],
-    );
+    await conn.beginTransaction();
+    transactionStarted = true;
 
-    if (mutualLike.length && is_like) {
+    if (precheck.has_mutual_like && likeFlag === 1) {
       /* 🎉 MATCH */
       const matchId = getId();
 
@@ -220,12 +247,19 @@ exports.addLikeOrDislike = async (req, res) => {
         [userId, other_user_id, other_user_id, userId],
       );
 
-      await conn.query(
-        `UPDATE user_config SET swipes = swipes - 1 WHERE user_id = ?`,
+      const [swipeUpdate] = await conn.query(
+        `UPDATE user_config SET swipes = swipes - 1 WHERE user_id = ? AND swipes > 0`,
         [userId],
       );
 
+      if (!swipeUpdate.affectedRows) {
+        await conn.rollback();
+        transactionStarted = false;
+        return res.status(403).json({ message: "No swipes left" });
+      }
+
       await conn.commit();
+      transactionStarted = false;
       return res.status(200).json({
         matched: true,
         matchedUserId: other_user_id,
@@ -233,30 +267,48 @@ exports.addLikeOrDislike = async (req, res) => {
     }
 
     /* 4️⃣ Normal like/dislike */
-    await conn.query(
+    const [insertResult] = await conn.query(
       `
       INSERT INTO like_and_dislikes (id, user_id, other_user_id, is_like)
       SELECT ?, ?, ?, ?
       WHERE NOT EXISTS (
         SELECT 1 FROM like_and_dislikes
         WHERE user_id = ? AND other_user_id = ?
+          AND is_deleted != 1
       )
       `,
-      [getId(), userId, other_user_id, is_like, userId, other_user_id],
+      [getId(), userId, other_user_id, likeFlag, userId, other_user_id],
     );
 
-    await conn.query(
-      `UPDATE user_config SET swipes = swipes - 1 WHERE user_id = ?`,
+    if (!insertResult.affectedRows) {
+      await conn.rollback();
+      transactionStarted = false;
+      return res.status(200).json({
+        matched: false,
+        liked: likeFlag,
+        alreadyProcessed: true,
+      });
+    }
+
+    const [swipeUpdate] = await conn.query(
+      `UPDATE user_config SET swipes = swipes - 1 WHERE user_id = ? AND swipes > 0`,
       [userId],
     );
 
+    if (!swipeUpdate.affectedRows) {
+      await conn.rollback();
+      transactionStarted = false;
+      return res.status(403).json({ message: "No swipes left" });
+    }
+
     await conn.commit();
+    transactionStarted = false;
     return res.status(200).json({
       matched: false,
-      liked: is_like,
+      liked: likeFlag,
     });
   } catch (err) {
-    if (conn) await conn.rollback();
+    if (conn && transactionStarted) await conn.rollback();
     console.error("Swipe failed:", err);
     return res.status(500).json({ message: "Swipe failed" });
   } finally {

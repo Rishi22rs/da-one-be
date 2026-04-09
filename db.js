@@ -1,11 +1,26 @@
 var mysql = require("mysql2/promise");
 
-var db = mysql.createPool({
-  host: "mysql-bae2b.alwaysdata.net",
-  user: "bae2b",
-  database: "bae2b_daone",
+const dbConfig = {
+  host: process.env.DB_HOST || process.env.MYSQL_HOST,
+  user: process.env.DB_USER || process.env.MYSQL_USER,
+  database: process.env.DB_NAME || process.env.MYSQL_DATABASE,
+  password: process.env.DB_PASSWORD || process.env.MYSQL_PASSWORD,
+  port: Number(process.env.DB_PORT || process.env.MYSQL_PORT || 3306),
   multipleStatements: true,
-  password: "Hellobae2b@22",
-});
+};
+
+const missingVars = [];
+if (!dbConfig.host) missingVars.push("DB_HOST");
+if (!dbConfig.user) missingVars.push("DB_USER");
+if (!dbConfig.database) missingVars.push("DB_NAME");
+if (!dbConfig.password) missingVars.push("DB_PASSWORD");
+
+if (missingVars.length) {
+  throw new Error(
+    `Missing required database environment variables: ${missingVars.join(", ")}`,
+  );
+}
+
+var db = mysql.createPool(dbConfig);
 
 module.exports = db;

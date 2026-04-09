@@ -120,12 +120,26 @@ exports.getLikesReceived = async (req, res) => {
     }
 
     const sql = `
-      SELECT u.*
+      SELECT
+        u.id,
+        u.name,
+        u.bio,
+        u.birthday,
+        u.gender,
+        u.orientation,
+        u.passions,
+        u.height,
+        u.languages,
+        u.job,
+        u.latitude,
+        u.longitude,
+        l.timestamp AS liked_at
       FROM like_and_dislikes l
       JOIN user u ON l.user_id = u.id
       WHERE l.other_user_id = ?
         AND l.is_like = 1
         AND l.is_deleted != 1
+      ORDER BY l.timestamp DESC
     `;
 
     const [rows] = await db.query(sql, [userId]);
